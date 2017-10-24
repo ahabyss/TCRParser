@@ -65,9 +65,15 @@ class chatmsg():
     def toJSON(self):
         return [self.n, self.c, self.m, self.ttvGEmotes, self.bttvGEmotes, self.ttvCEmotes, self.badges]
     def buildBadge(self):
-        tr1 = random() < 8/36
-        tr2 = random() < 9/73
-        self.badges = [[random() < 27/360, tr1 and tr2, tr1 and not tr2],[]]
+        tempBadge = []
+        if random() < 27/360:
+            tempBadge.append(2)
+        if random() < 8/36:
+            if random() < 9/73:
+                tempBadge.append(0)
+            else:
+                tempBadge.append(1)
+        self.badges = [tempBadge, []]
 
         
 colors = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
@@ -186,18 +192,20 @@ for marathon in marathons:
         for ep in show.episodes:
             epStartCalculated = show.anchorTime + ep.startDelta + show.offsetDelta + ep.delayDelta #anchorTime = estimate show start, startDelta = how many seconds into the series, offsetDelta = how far off anchorTime is, delayDelta = specific epi delay
             periodStart = epStartCalculated
-            skippedParts = timedelta(0)
+            skippedChatSegments = timedelta(0)
             for period in ep.periods:
-                ep.periodPlot.append([[periodStart + skippedParts, periodStart + skippedParts + period[0]], period[1]])
-                if period[1] == 0: #section
-                    ep.msgs = ep.msgs.append(copy.deepcopy(marathon.msgSeries[periodStart + skippedParts : periodStart + skippedParts + period[0]].rename(lambda timeIndex: (timeIndex - epStartCalculated).total_seconds())))
-                    periodStart += period[0]
-                elif period[1] == 1:            #skipped anime part (this didn't exist for chat, but it does for us, need to shift future episodes by this amount)
-                    skippedParts += period[0]
-                else:                           #chatbreak (this doesn't exist for us (because we don't watch the breaks), but exists in chat, we cut it out by progressing without putting msgs)
-                    periodStart += period[0]
+                ep.periodPlot.append([[periodStart, periodStart + period[0]], period[1]])
+                
+                if period[1] == 0:      #regular section so append messages
+                    ep.msgs = ep.msgs.append(copy.deepcopy(marathon.msgSeries[periodStart : periodStart + period[0]].rename(lambda timeIndex: ((timeIndex - epStartCalculated) - skippedChatSegments).total_seconds())))
+                elif period[1] == 1:    #skipped anime part (this didn't exist for chat, but it does for us, we simply don't append chat) [pulling chat data is meaningless cuz chat wasn't watching this]
+                    True #nothing
+                else:                   #chatbreak (this doesn't exist for us (we don't watch breaks), but exists for chat, we cut it out by progressing without putting msgs and adding a skip to reindex future messages so we don't get minutes of nothing
+                    skippedChatSegments += period[0]
                     
-        show.plotEnd = periodStart + skippedParts #just add the skippedParts of the final ep.
+                periodStart += period[0]
+                    
+        show.plotEnd = periodStart + timedelta(minutes = 5) #just for plotting, doesn't matter we just wanna get past the end of the final ep
         
         #-----Here we edit messages for emojis, so we do this first
         for ep in show.episodes:
@@ -234,7 +242,7 @@ for marathon in marathons:
                     
 #-----Output data files
 showOutput = []
-for marathon in marathons:
+for marathon in reversed(marathons):
     for show in marathon.shows:
         for epInd, ep in enumerate(show.episodes):
             with open(dir + dataSubDir + show.jsonName + str(epInd + 1) + '.json', 'w', encoding='utf-8') as outfile:
