@@ -17,10 +17,11 @@ import matplotlib.patches as patches
 from matplotlib import colors as mcolors
 
 class marathon():
-    def __init__(self, chatLogFiles, badgeFiles):
+    def __init__(self, title, chatLogFiles, badgeFiles):
         
         self.shows = []
         
+        self.title = title        
         self.chatLogFiles = chatLogFiles
         self.badgeFiles = badgeFiles
         self.badgeNames = {}
@@ -86,8 +87,8 @@ dataSubDir = 'OutputData\\'
 plotSubDir = 'PlotData\\'
 
 marathons = []
-marathons.append(marathon(['2017-07-27.txt', '2017-07-28.txt', '2017-07-29.txt', '2017-07-30.txt', '2017-07-31.txt', '2017-08-01.txt'], []))
-marathons.append(marathon(['2017-10-09.txt', '2017-10-10.txt', '2017-10-11.txt', '2017-10-12.txt', '2017-10-13.txt', '2017-10-14.txt'], ['1b1.json', '1b2.json', '1b3.json']))
+marathons.append(marathon('crunchyroll', ['2017-07-27.txt', '2017-07-28.txt', '2017-07-29.txt', '2017-07-30.txt', '2017-07-31.txt', '2017-08-01.txt'], []))
+marathons.append(marathon('RWBY', ['2017-10-09.txt', '2017-10-10.txt', '2017-10-11.txt', '2017-10-12.txt', '2017-10-13.txt', '2017-10-14.txt'], ['1b1.json', '1b2.json', '1b3.json']))
                           
 #-----Load Emotes and Emoji
 ttvGlobal = {}
@@ -116,7 +117,7 @@ with open(dir + logsSubDir + 'emoji.json', encoding='utf-8') as jd: #https://www
         emojiGlobal[':' + emoji['name'].replace(' ', '_') + ':'] = emoji['char']
 
 #-----Load marathon specific items (chat and badges)
-for mid, marathon in enumerate(marathons):
+for marathon in marathons:
     #-----Load Badge Info
     for badgeFile in marathon.badgeFiles:
         if os.path.exists(dir + logsSubDir + badgeFile):
@@ -134,7 +135,7 @@ for mid, marathon in enumerate(marathons):
                                     marathon.badgeNames[name][1] = badge['version']
         
     #-----Load Chat & Get Sorted Msg Log
-    if not os.path.exists(dir + logsSubDir + 'totalLog' + str(mid) + '.bin'):
+    if not os.path.exists(dir + logsSubDir + 'totalLog' + marathon.title + '.bin'):
         timeSmoothing = 2 #seconds
         msgsRaw = []
         count = 0
@@ -150,8 +151,9 @@ for mid, marathon in enumerate(marathons):
                 
                     if timeStamp not in prevTimes:
                         if len(msgsRaw) > 0:
-                            prevTimes[timeStamp] = [msgsRaw[-1][0].dt, 0]
-                            prevTimes[msgsRaw[-1][0].dt][1] = count
+                            prevTimes[timeStamp] = [timeStamp, 0]       #needed to keeptrack if we got to a new time (will be overwritten unless this is the last block total)
+                            prevTimes[msgsRaw[-1][0].dt][0] = timeStamp #we finished prev block so set their 'next-time' to be this time
+                            prevTimes[msgsRaw[-1][0].dt][1] = count     #and we now know the count of that block
                         else:
                             prevTimes[timeStamp] = [timeStamp, 0]
                         count = 0 #keeps track of the index this message should have after we bunch them
@@ -162,15 +164,15 @@ for mid, marathon in enumerate(marathons):
                 prevTimes[msgsRaw[-1][0].dt][1] = count
                     
         for msgInfo in msgsRaw: #Perform smoothing
-            msgInfo[0].dt -= timedelta(seconds = ((msgInfo[0].dt - prevTimes[msgInfo[0].dt][0]).total_seconds()) * (1 - msgInfo[1] / prevTimes[msgInfo[0].dt][1]))
+            msgInfo[0].dt += timedelta(seconds = ((prevTimes[msgInfo[0].dt][0] - msgInfo[0].dt).total_seconds()) * (msgInfo[1] / prevTimes[msgInfo[0].dt][1]))
 
         marathon.msgSeries = Series((msgInfo[0] for msgInfo in msgsRaw), (msgInfo[0].dt for msgInfo in msgsRaw))    
         
-        with open(dir + logsSubDir + 'totalLog' + str(mid) + '.bin', 'wb') as jd:
+        with open(dir + logsSubDir + 'totalLog' + str(marathon.title) + '.bin', 'wb') as jd:
             pickle.Pickler(jd).dump(marathon.msgSeries)
     else:
-        print('Loading Marathon ' + str(mid))
-        with open(dir + logsSubDir + 'totalLog' + str(mid) + '.bin', 'rb') as jd:
+        print('Loading Marathon ' + str(marathon.title))
+        with open(dir + logsSubDir + 'totalLog' + str(marathon.title) + '.bin', 'rb') as jd:
             marathon.msgSeries = pickle.Unpickler(jd).load()
 
 #-----Load show and episode info
@@ -271,7 +273,7 @@ if True:
             for sec in [show.anchorTime + timedelta(seconds = x) for x in range(plotXMax)]:
                 for msgType in msgCountArray:
                     msgTypeInfo = msgCountArray[msgType]
-                    msgTypeInfo[0].append(len([msg for msg in marathon.msgSeries[sec - timedelta(seconds = msgTypeInfo[1] / 2) : sec + timedelta(seconds = msgTypeInfo[1] / 2)] if re.match(msgTypeInfo[2], msg.m, re.I) is not None]) / msgTypeInfo[1])
+                    msgTypeInfo[0].append(len([msg for msg in marathon.msgSeries[sec - timedelta(seconds = msgTypeInfo[1] / 2) : sec + timedelta(seconds = msgTypeInfo[1] / 2)] if re.search(msgTypeInfo[2], msg.m, re.I) is not None]) / msgTypeInfo[1])
             
             show.plotSave = [msgCountArray, []]
             
@@ -309,5 +311,5 @@ if True:
                 json.encoder.FLOAT_REPR = lambda f: ("%.1f" % f)
                 json.dump(show.plotSave, outfile)
                 
-    #plt.show()
+    plt.show()
 
